@@ -1,0 +1,41 @@
+name: Intelligent CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production EC2 Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "index.html"
+          target: "/var/www/html/"
+
+      - name: Execute Live Health Check & Rollback Validation
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo apt-get update && sudo apt-get install -y apache2
+            # Run an automated health monitoring check on the newly deployed app
+            if curl -s --head  --request GET http://localhost | grep "200 OK" > /dev/null
+            then
+               echo "Deployment Status: SUCCESS. Health check passed."
+            else
+               echo "Deployment Status: FAILED. Initiating Automated Rollback..."
+               # Simple rollback logic: Restore the fallback default layout file
+               echo "<h1>System Recovered: Automated Rollback Executed Successfully</h1>" | sudo tee /var/www/html/index.html
+               exit 1
+            fi
